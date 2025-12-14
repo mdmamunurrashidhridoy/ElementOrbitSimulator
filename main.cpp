@@ -2,16 +2,16 @@
 #include <windows.h>    // must be included before GL headers on Windows
 #endif
 
-#include <GL/glut.h>    // or <GL/freeglut.h> if you're using freeglut
-#include <cstdlib>
-#include <cmath>
+#include <GL/glut.h>
+#include <cstdlib> // for rand, srand
+#include <cmath>    // sin, cos, sqrt
 #include <cstring>
 #include <cstdio>       // for sprintf
 
-// ----------------- Constants -----------------
+
 const float PI = 3.14159265358979323846f;
 
-// ----------------- Modes -----------------
+
 enum Mode { MODE_TABLE, MODE_ATOM };
 Mode currentMode = MODE_TABLE;
 
@@ -277,7 +277,7 @@ void setupElectronsFromElement(const ElementInfo& e) {
         for (int i = 0; i < count && numElectrons < MAX_ELECTRONS; ++i) {
             Electron &el = electrons[numElectrons++];
             el.radius = radius;
-            el.angle  = (360.0f * i) / count;  // evenly spaced
+            el.angle  = (360.0f * i) / count;
             el.speed  = baseSpeed + 0.15f * shell + 0.02f * i;
 
             // Different tilt for shells for 3D effect
@@ -306,23 +306,51 @@ void drawLineDDA(float x1, float y1, float x2, float y2) {
     float dx = x2 - x1;
     float dy = y2 - y1;
 
-    float steps = fabsf(dx) > fabsf(dy) ? fabsf(dx) : fabsf(dy);
-    if (steps == 0) steps = 1.0f;
+    // Handle vertical line separately to avoid division by zero
+    if (dx == 0) {
+        float y = y1;
+        float yStep = (dy > 0) ? 1.0f : -1.0f;
 
-    float xInc = dx / steps;
-    float yInc = dy / steps;
+        glBegin(GL_POINTS);
+        while ((yStep > 0 && y <= y2) || (yStep < 0 && y >= y2)) {
+            putPixel(x1, y);
+            y += yStep;
+        }
+        glEnd();
+        return;
+    }
+
+    float m = dy / dx;   // slope
 
     float x = x1;
     float y = y1;
 
     glBegin(GL_POINTS);
-    for (int i = 0; i <= (int)steps; ++i) {
-        putPixel(x, y);
-        x += xInc;
-        y += yInc;
+
+    // -------- Case 1: |Δx| ≥ |Δy| --------
+    if (fabsf(dx) >= fabsf(dy)) {
+        float xStep = (dx > 0) ? 1.0f : -1.0f;
+
+        while ((xStep > 0 && x <= x2) || (xStep < 0 && x >= x2)) {
+            putPixel(x, y);
+            x = x + xStep;   // x(i+1) = x(i) + 1
+            y = y + m;       // y(i+1) = y(i) + m
+        }
     }
+    // -------- Case 2: |Δy| > |Δx| --------
+    else {
+        float yStep = (dy > 0) ? 1.0f : -1.0f;
+
+        while ((yStep > 0 && y <= y2) || (yStep < 0 && y >= y2)) {
+            putPixel(x, y);
+            y = y + yStep;   // y(i+1) = y(i) + 1
+            x = x + (1.0f / m); // x(i+1) = x(i) + 1/m
+        }
+    }
+
     glEnd();
 }
+
 
 void drawRectDDA(float x, float y, float w, float h) {
     float x2 = x + w;
@@ -359,7 +387,7 @@ void drawPeriodicTable() {
     float cellW  = 3.5f;
     float rowH   = 6.5f;
 
-    // Main periods 1�7
+    // Main periods 1–7
     for (int i = 0; i < numElements; ++i) {
         ElementInfo &e = elements[i];
 
@@ -464,8 +492,7 @@ void drawNucleus(const ElementInfo& e) {
     }
     int totalNucleons = Z + neutrons;
 
-    // We don't want to draw 200 tiny balls for heavy elements,
-    // so we cap the number and scale proportionally.
+
     const int MAX_NUCLEONS_DRAW = 60;
     int drawProtons  = Z;
     int drawNeutrons = neutrons;
@@ -476,12 +503,11 @@ void drawNucleus(const ElementInfo& e) {
         drawNeutrons = MAX_NUCLEONS_DRAW - drawProtons;
     }
 
-    // Overall cluster radius (slightly grows with Z)
-    float clusterRadius = 3.0f + 0.01f * Z;
-    float sphereRadius  = 0.4f;  // radius of each proton/neutron sphere
 
-    // Make the random pattern deterministic per element:
-    // same element => same nucleus layout every time.
+    float clusterRadius = 3.0f + 0.01f * Z;
+    float sphereRadius  = 0.4f;
+
+
     srand(e.Z);
 
     // --- Draw protons (red) ---
@@ -679,7 +705,7 @@ void reshape(int w, int h) {
     glutPostRedisplay();
 }
 
-// Timer callback � animate electrons
+// Timer callback – animate electrons
 void timer(int value) {
     if (!isPaused && currentMode == MODE_ATOM) {
         for (int i = 0; i < numElectrons; ++i) {
@@ -701,6 +727,7 @@ void keyboard(unsigned char key, int x, int y) {
             isPaused = !isPaused;
             break;
         case '+':
+        case '=':
             camDist -= 1.0f;
             if (camDist < 10.0f) camDist = 10.0f;
             break;
